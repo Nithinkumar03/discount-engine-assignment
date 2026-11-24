@@ -4,10 +4,11 @@
   "description": "Opptra FDE Intern Assignment — Discount Engine",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
-  },
+  "dev": "vite",
+  "build": "vite build",
+  "preview": "vite preview",
+  "start": "node server/index.js"
+},
   "dependencies": {
     "dotenv": "^18.0.10",
     "express": "^5.3.0",

@@ -4,7 +4,8 @@ import Groq from 'groq-sdk'
 import dotenv from 'dotenv'
 
 dotenv.config()
-
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
 const app = express()
 app.use(express.json({ limit: '10kb' }))
 
@@ -166,7 +167,19 @@ Rules:
     })
   }
 })
+// Serve the React frontend in production
+const frontendPath = path.join(__dirname, '../dist')
 
+app.use(express.static(frontendPath))
+
+// Send React's index.html for frontend routes
+app.use((req, res, next) => {
+  if (req.method !== 'GET') {
+    return next()
+  }
+
+  res.sendFile(path.join(frontendPath, 'index.html'))
+})
 app.listen(PORT, () => {
   console.log(`Groq backend running at http://localhost:${PORT}`)
 })
