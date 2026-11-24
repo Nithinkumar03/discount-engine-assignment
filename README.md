@@ -17,7 +17,7 @@ React, Vite, JavaScript, Node.js, Express, Groq API, PDF.js.
 
 ## Live Deployment
 
-**Live Application:** ADD_YOUR_DEPLOYED_URL_HERE
+**Live Application:** https://discount-engine-assignment-nlug.onrender.com
 
 **GitHub Repository:** https://github.com/Nithinkumar03/discount-engine-assignment
 
