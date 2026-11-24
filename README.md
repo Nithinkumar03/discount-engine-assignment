@@ -1,87 +1,75 @@
-# Opptra Discount Engine — Base Implementation
+# Opptra Discount Engine
 
-This is the base implementation for the Opptra FDE Intern assignment.
-Fork this repo, complete the tasks in the assignment brief, and submit your GitHub link + Loom.
+A React-based discount engine built for the Opptra FDE Intern assignment.
 
-## Running locally
+## Features
+
+- Product-level discounts based on brand and platform.
+- Cart-level discounts with minimum cart value conditions.
+- Natural-language discount rule creation using Groq AI.
+- Rule preview, confirmation, and discard.
+- PDF cart upload and automatic discount recalculation.
+- Item-level and cart-level discount breakdown.
+
+## Tech Stack
+
+React, Vite, JavaScript, Node.js, Express, Groq API, PDF.js.
+
+## Live Deployment
+
+**Live Application:** ADD_YOUR_DEPLOYED_URL_HERE
+
+**GitHub Repository:** https://github.com/Nithinkumar03/discount-engine-assignment
+
+## Run Locally
+
+**Step 1 — Install dependencies and configure the API key**
 
 ```bash
 npm install
+```
+
+Create a `.env` file in the project root:
+
+```env
+GROQ_API_KEY=your_groq_api_key
+```
+
+**Step 2 — Start the application**
+
+Open two terminals in the project folder.
+
+Terminal 1:
+
+```bash
+node server/index.js
+```
+
+Terminal 2:
+
+```bash
 npm run dev
 ```
 
-Open http://localhost:5173
+Open http://localhost:5173.
 
-## Deploying
+## Sample Data
+
+- `sample-data/rules.csv` — discount rules.
+- `sample-data/cart.csv` — cart items.
+- `sample-data/cart less 4000.csv` — cart below the minimum cart value.
+
+## Discount Logic
+
+- The largest saving among matching non-stackable item rules is selected.
+- Stackable item rules are applied after the winning non-stackable rule.
+- Cart-level discounts are calculated after item-level discounts.
+- Minimum cart value conditions are checked before applying cart offers.
+
+## Production Build
 
 ```bash
 npm run build
 ```
 
-Deploy the `dist/` folder to Vercel, Netlify, or any static host.
-The live deployment URL must be in your README before submission.
-
-## How to use
-
-1. Upload `sample-data/rules.csv` as the discount rules input
-2. Upload `sample-data/cart.csv` as the cart input
-3. Click **Calculate Discounts**
-
-## Project structure
-
-```
-src/
-  engine/
-    discountEngine.js   ← pure discount logic (no UI)
-    csvParser.js        ← CSV → typed objects
-  components/
-    CsvUploader.jsx     ← file upload area
-    DataTable.jsx       ← reusable table
-    ErrorBanner.jsx     ← parse error display
-  App.jsx               ← main UI + state
-  main.jsx              ← entry point
-
-sample-data/
-  rules.csv             ← sample discount rules
-  cart.csv              ← sample cart items
-```
-
-## CSV formats
-
-**rules.csv**
-
-| Column     | Type              | Example          |
-|------------|-------------------|------------------|
-| rule_id    | string            | RULE-01          |
-| scope      | brand \| platform | platform         |
-| applies_to | string            | Amazon India     |
-| type       | percentage \| flat| percentage       |
-| value      | number            | 15               |
-| stackable  | true \| false     | false            |
-
-**cart.csv**
-
-| Column     | Type   | Example      |
-|------------|--------|--------------|
-| item_id    | string | ITEM-01      |
-| product    | string | Cushion Cover|
-| brand      | string | Natura Casa  |
-| platform   | string | Amazon India |
-| base_price | number | 1299         |
-
-## Discount logic
-
-- When multiple non-stackable rules match an item, the one giving the **largest saving in rupees** is applied.
-- Rules marked `stackable: true` apply **on top of** the winning non-stackable rule.
-- If no rules match, the base price is returned with a "No offers available" note.
-
-## Expected results for the sample data
-
-| Item    | Base Price | Final Price | Reasoning                              |
-|---------|-----------|-------------|----------------------------------------|
-| ITEM-01 | Rs.1,299  | Rs.1,104    | Platform offer: 15% off (beats Rs.150) |
-| ITEM-02 | Rs.849    | Rs.629      | Brand offer: Rs.150 off + Platform 10% |
-| ITEM-03 | Rs.599    | Rs.509      | Platform offer: 15% off                |
-| ITEM-04 | Rs.2,499  | Rs.2,499    | No offers available                    |
-| ITEM-05 | Rs.449    | Rs.382      | Platform offer: 15% off                |
-| ITEM-06 | Rs.899    | Rs.809      | Platform offer: 10% off                |
+The frontend production files are generated in `dist/`.
