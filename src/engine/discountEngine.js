@@ -172,3 +172,103 @@ export function processCart(cartItems, rules) {
 export function cartTotal(results) {
   return results.reduce((sum, r) => sum + r.finalPrice, 0)
 }
+
+
+/**
+ * Calculates cart-level discounts after item-level
+ * discounts have already been applied.
+ *
+ * Returns the subtotal, cart discount and final total.
+ */
+export function calculateCartDiscount(results, rules) {
+  // Step 1: Calculate cart subtotal
+  const subtotal = cartTotal(results)
+
+  // Step 2: Find cart-level rules
+  const cartRules = rules.filter(
+    (rule) => rule.scope === 'cart'
+  )
+
+  // Step 3: Check which cart rules meet their threshold
+  const eligibleRules = cartRules.filter(
+    (rule) => subtotal >= rule.minCartValue
+  )
+
+  // No eligible cart discount
+  if (eligibleRules.length === 0) {
+    return {
+      subtotal,
+      discount: 0,
+      finalTotal: subtotal,
+      applied: false,
+      appliedRules: [],
+      reasoning: 'No cart offers available',
+    }
+  }
+
+  // Step 4: Separate stackable and non-stackable rules
+  const nonStackable = eligibleRules.filter(
+    (rule) => !rule.stackable
+  )
+
+  const stackable = eligibleRules.filter(
+    (rule) => rule.stackable
+  )
+
+  // Step 5: Select the best non-stackable rule
+  let winner = null
+
+  if (nonStackable.length > 0) {
+    winner = nonStackable.reduce((best, current) => {
+      const bestSaving = Math.round(
+        subtotal * best.value / 100
+      )
+
+      const currentSaving = Math.round(
+        subtotal * current.value / 100
+      )
+
+      return currentSaving > bestSaving ? current : best
+    })
+  }
+
+  // Step 6: Apply the winning rule and stackable rules
+  let price = subtotal
+  const appliedRules = []
+  const reasoningParts = []
+
+  const applyRule = (rule) => {
+    const saving = Math.min(
+      price,
+      Math.round(price * rule.value / 100)
+    )
+
+    price -= saving
+    appliedRules.push(rule.ruleId)
+
+    reasoningParts.push(
+      `Cart offer: ${rule.value}% off`
+    )
+  }
+
+  if (winner) {
+    applyRule(winner)
+  }
+
+  for (const rule of stackable) {
+    applyRule(rule)
+  }
+
+  // Step 7: Return final cart calculation
+  const finalTotal = Math.round(price)
+  const discount = subtotal - finalTotal
+
+  return {
+    subtotal,
+    discount,
+    finalTotal,
+    applied: true,
+    appliedRules,
+    reasoning: reasoningParts.join(' + '),
+  }
+}

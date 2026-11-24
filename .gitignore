@@ -31,3 +31,7 @@ pnpm-debug.log*
 # OS files
 .DS_Store
 Thumbs.db
+
+.env
+.env.*
+!.env.examplesample-data/~$cart.csv

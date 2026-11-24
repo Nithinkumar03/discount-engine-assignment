@@ -10,7 +10,11 @@ import CsvUploader from './components/CsvUploader.jsx'
 import DataTable from './components/DataTable.jsx'
 import ErrorBanner from './components/ErrorBanner.jsx'
 import { parseRulesCSV, parseCartCSV } from './engine/csvParser.js'
-import { processCart, cartTotal } from './engine/discountEngine.js'
+import { parseCartPDF } from './engine/pdfParser.js'
+import {
+  processCart,
+  calculateCartDiscount
+} from './engine/discountEngine.js'
 
 // ── Column definitions ───────────────────────────────────────────
 
@@ -114,6 +118,12 @@ export default function App() {
   const [cartFileName, setCartFileName]   = useState('')
 
   const [results, setResults]       = useState(null)
+  const [cartDiscountResult, setCartDiscountResult] = useState(null)
+    // Natural-language discount rule state
+  const [naturalRuleText, setNaturalRuleText] = useState('')
+  const [parsedRule, setParsedRule] = useState(null)
+  const [ruleParseError, setRuleParseError] = useState('')
+  const [isParsingRule, setIsParsingRule] = useState(false)
 
   // ── Handlers ──
 
@@ -122,7 +132,8 @@ export default function App() {
     setRules(data)
     setRulesErr(errors)
     setRulesFileName(fileName)
-    setResults(null) // clear stale results
+    setResults(null) 
+    setCartDiscountResult(null)// clear stale results
   }
 
   function handleCartLoad(csvText, fileName) {
@@ -131,11 +142,142 @@ export default function App() {
     setCartErrors(errors)
     setCartFileName(fileName)
     setResults(null)
+    setCartDiscountResult(null)
   }
 
-  function handleCalculate() {
-    const res = processCart(cartItems, rules)
-    setResults(res)
+  async function handleCartPDFLoad(event) {
+    const file = event.target.files[0]
+    if (!file) return
+
+    try {
+      if (file.type !== 'application/pdf') {
+        setCartErrors(['Please upload a valid PDF file.'])
+        return
+      }
+
+      const { data, errors } = await parseCartPDF(file)
+
+      setCartErrors(errors)
+
+      // Replace the cart only if at least one valid item was found.
+      if (data.length > 0) {
+        setCartItems(data)
+        setCartFileName(file.name)
+
+        // Automatically recalculate using the active rules.
+        if (rules.length > 0) {
+          const updatedResults = processCart(data, rules)
+          setResults(updatedResults)
+          setCartDiscountResult(
+            calculateCartDiscount(updatedResults, rules)
+          )
+        } else {
+          setResults(null)
+          setCartDiscountResult(null)
+        }
+      }
+    } catch (error) {
+      setCartErrors(['Unable to process the PDF. Please try another file.'])
+    } finally {
+      event.target.value = ''
+    }
+  }
+
+  
+function handleCalculate() {
+  // Calculate discounts for individual products
+  const res = processCart(cartItems, rules)
+
+  // Calculate the additional cart-level discount
+  const cartDiscount = calculateCartDiscount(res, rules)
+
+  // Save both results
+  setResults(res)
+  setCartDiscountResult(cartDiscount)
+}
+
+ 
+async function handleParseRule() {
+  setIsParsingRule(true)
+  setRuleParseError('')
+  setParsedRule(null)
+
+  try {
+    const response = await fetch('/api/parse-rule', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ text: naturalRuleText }),
+    })
+
+    const responseText = await response.text()
+
+    if (!responseText.trim()) {
+      throw new Error(
+        `Backend returned an empty response (HTTP ${response.status}). Check whether the backend server is running.`
+      )
+    }
+
+    let data
+
+    try {
+      data = JSON.parse(responseText)
+    } catch {
+      throw new Error(
+        `Backend returned an invalid response (HTTP ${response.status}). Check the backend terminal for errors.`
+      )
+    }
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Unable to parse the rule.')
+    }
+
+    setParsedRule(data)
+  } catch (error) {
+    setRuleParseError(error.message)
+  } finally {
+    setIsParsingRule(false)
+  }
+}
+
+
+  function handleConfirmRule() {
+    if (!parsedRule || !parsedRule.isResolvable) return
+
+    const newRule = {
+      ruleId: `CUSTOM-${Date.now()}`,
+      scope: parsedRule.scope,
+      appliesTo: parsedRule.scope === 'cart' ? '' : parsedRule.appliesTo,
+      type: parsedRule.type,
+      value: Number(parsedRule.value),
+      stackable: parsedRule.stackable,
+      minCartValue:
+        parsedRule.scope === 'cart'
+          ? Number(parsedRule.minCartValue)
+          : null,
+    }
+
+    const updatedRules = [...rules, newRule]
+    setRules(updatedRules)
+
+    // Recalculate the current cart using the updated rules.
+    if (cartItems.length > 0) {
+      const updatedResults = processCart(cartItems, updatedRules)
+      setResults(updatedResults)
+      setCartDiscountResult(
+        calculateCartDiscount(updatedResults, updatedRules)
+      )
+    }
+
+    setParsedRule(null)
+    setNaturalRuleText('')
+    setRuleParseError('')
+  }
+
+  function handleDiscardRule() {
+    setParsedRule(null)
+    setRuleParseError('')
   }
 
   const canCalculate = rules.length > 0 && cartItems.length > 0
@@ -185,6 +327,28 @@ export default function App() {
               hasData={cartItems.length > 0}
               fileName={cartFileName}
             />
+
+            <div style={{ marginTop: 12 }}>
+              <label
+                style={{
+                  display: 'block',
+                  fontSize: 12,
+                  fontWeight: 700,
+                  color: '#131A48',
+                  marginBottom: 6,
+                }}
+              >
+                Or upload cart as PDF
+              </label>
+
+              <input
+                type="file"
+                accept=".pdf,application/pdf"
+                onChange={handleCartPDFLoad}
+                style={{ fontSize: 12 }}
+              />
+            </div>
+
             <ErrorBanner errors={cartErrors} />
             {cartItems.length > 0 && (
               <div style={{ marginTop: '0.75rem' }}>
@@ -195,6 +359,102 @@ export default function App() {
               </div>
             )}
           </div>
+        </div>
+
+
+        {/* Natural language discount rule */}
+        <div style={S.section}>
+          <div style={S.sectionTitle}>Create Discount Using Natural Language</div>
+
+          <textarea
+            value={naturalRuleText}
+            onChange={(e) => setNaturalRuleText(e.target.value)}
+            placeholder="Example: 20% off for Natura Casa brand, stackable with other offers"
+            rows={3}
+            style={{
+              width: '100%',
+              padding: '0.75rem',
+              border: '1px solid #CECECE',
+              borderRadius: 4,
+              fontSize: 13,
+              boxSizing: 'border-box',
+              resize: 'vertical',
+              fontFamily: 'Arial, sans-serif',
+            }}
+          />
+
+          <button
+            style={
+              naturalRuleText.trim() && !isParsingRule
+                ? S.btn
+                : S.btnDisabled
+            }
+            onClick={handleParseRule}
+            disabled={!naturalRuleText.trim() || isParsingRule}
+          >
+            {isParsingRule ? 'Parsing...' : 'Parse Discount Rule'}
+          </button>
+
+          {ruleParseError && (
+            <div style={{ color: '#b00020', marginTop: 10, fontSize: 13 }}>
+              {ruleParseError}
+            </div>
+          )}
+
+          {parsedRule && !parsedRule.isResolvable && (
+            <div style={{ color: '#b00020', marginTop: 10, fontSize: 13 }}>
+              {parsedRule.clarification || 'Please provide more details.'}
+            </div>
+          )}
+
+          
+{parsedRule && parsedRule.isResolvable && (
+  <div>
+    <div style={{
+      marginTop: 15,
+      padding: 12,
+      background: '#f7f7f9',
+      borderRadius: 4
+    }}>
+      <strong>Parsed Rule — Please Review</strong>
+      <p>Scope: {parsedRule.scope}</p>
+      <p>Applies To: {parsedRule.appliesTo || 'Entire Cart'}</p>
+      <p>Discount Type: {parsedRule.type}</p>
+      <p>Discount Value: {parsedRule.value}</p>
+      <p>Stackable: {parsedRule.stackable ? 'Yes' : 'No'}</p>
+
+      {parsedRule.scope === 'cart' && (
+        <p>Minimum Cart Value: Rs.{parsedRule.minCartValue}</p>
+      )}
+    </div>
+
+    <div style={{
+      display: 'flex',
+      gap: '10px',
+      marginTop: 12
+    }}>
+      <button
+        style={S.btn}
+        onClick={handleConfirmRule}
+      >
+        Confirm Rule
+      </button>
+
+      <button
+        style={{ ...S.btn, background: '#777' }}
+        onClick={handleDiscardRule}
+      >
+        Discard Rule
+      </button>
+    </div>
+  </div>
+)}
+
+
+               <div style={{ display: 'flex', gap: '10px', marginTop: 12 }}>
+                
+              </div>
+
         </div>
 
         {/* Calculate button */}
@@ -213,19 +473,52 @@ export default function App() {
           )}
         </div>
 
-        {/* Results */}
-        {results && (
-          <div style={S.section}>
-            <div style={S.sectionTitle}>Cart Summary</div>
-            <DataTable columns={RESULTS_COLUMNS} rows={results} />
-            <div style={S.totalRow}>
-              <span style={S.totalLabel}>Cart Total</span>
-              <span style={S.totalValue}>Rs.{cartTotal(results).toLocaleString('en-IN')}</span>
-            </div>
-          </div>
-        )}
+       
+{/* Results */}
+{results && cartDiscountResult && (
+  <div style={S.section}>
+    <div style={S.sectionTitle}>Cart Summary</div>
 
+    <DataTable columns={RESULTS_COLUMNS} rows={results} />
+
+    {/* Cart subtotal after item discounts */}
+    <div style={S.totalRow}>
+      <span style={S.totalLabel}>Cart Total Before Offer</span>
+      <span style={S.totalValue}>
+        Rs.{cartDiscountResult.subtotal.toLocaleString('en-IN')}
+      </span>
+    </div>
+
+    {/* Show cart discount only when applied */}
+    {cartDiscountResult.applied && (
+      <div style={{
+        ...S.totalRow,
+        borderTop: 'none',
+        marginTop: '0.3rem',
+        paddingTop: '0.3rem'
+      }}>
+        <span style={{ ...S.totalLabel, color: '#1e5c2c' }}>
+          {cartDiscountResult.reasoning}
+        </span>
+        <span style={{ ...S.totalValue, color: '#1e5c2c' }}>
+          -Rs.{cartDiscountResult.discount.toLocaleString('en-IN')}
+        </span>
       </div>
+    )}
+
+    {/* Final payable amount */}
+    <div style={{
+      ...S.totalRow,
+      borderTop: '2px solid #131A48'
+    }}>
+      <span style={S.totalLabel}>Final Cart Total</span>
+      <span style={S.totalValue}>
+        Rs.{cartDiscountResult.finalTotal.toLocaleString('en-IN')}
+      </span>
+    </div>
+  </div>
+)}
+    </div>
     </div>
   )
 }
